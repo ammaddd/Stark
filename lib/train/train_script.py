@@ -1,3 +1,5 @@
+from comet_ml import Experiment
+experiment = Experiment(auto_metric_logging=False)
 import os
 # loss function related
 from lib.utils.box_ops import giou_loss
@@ -15,6 +17,7 @@ from lib.models.stark import build_starks, build_starkst
 from lib.train.actors import STARKSActor, STARKSTActor
 # for import modules
 import importlib
+from pandas.io.json._normalize import nested_to_record
 
 
 def run(settings):
@@ -76,10 +79,15 @@ def run(settings):
     if cfg.TRAIN.DEEP_SUPERVISION:
         raise ValueError("Deep supervision is not supported now.")
 
+    settings_dict = nested_to_record(vars(settings), sep='_')
+    experiment.log_others(settings_dict)
+    experiment.log_asset(settings_dict['cfg_file'], 'cfg.yaml')
+    experiment.log_code("./lib/train/trainers/ltr_trainer.py")
+
     # Optimizer, parameters, and learning rates
     optimizer, lr_scheduler = get_optimizer_scheduler(net, cfg)
 
-    trainer = LTRTrainer(actor, [loader_train, loader_val], optimizer, settings, lr_scheduler)
+    trainer = LTRTrainer(actor, [loader_train, loader_val], optimizer, settings, lr_scheduler, experiment)
 
     # train process
     if settings.script_name == "stark_st2":

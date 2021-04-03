@@ -9,7 +9,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 
 class LTRTrainer(BaseTrainer):
-    def __init__(self, actor, loaders, optimizer, settings, lr_scheduler=None):
+    def __init__(self, actor, loaders, optimizer, settings, lr_scheduler=None, experiment=None):
         """
         args:
             actor - The actor for training the network
@@ -25,6 +25,9 @@ class LTRTrainer(BaseTrainer):
 
         # Initialize statistics variables
         self.stats = OrderedDict({loader.name: None for loader in self.loaders})
+
+        # Initialize Comet
+        self._experiment = experiment
 
         # Initialize tensorboard
         if settings.local_rank in [-1, 0]:
@@ -53,16 +56,30 @@ class LTRTrainer(BaseTrainer):
         torch.set_grad_enabled(loader.training)
 
         self._init_timing()
-
+        type_ = 'Train' if loader.training else 'Val'
         for i, data in enumerate(loader, 1):
             # get inputs
             if self.move_data_to_gpu:
                 data = data.to(self.device)
 
+            if i % 100 == 0:
+                self._experiment.log_image(data['template_images'][0][0].detach().cpu().numpy(),
+                                           name='template_images',
+                                           image_channels="first",
+                                           step=(i+1)*(self.epoch+1))
+                self._experiment.log_image(data['search_images'][0][0].detach().cpu().numpy(),
+                                           name='search_images',
+                                           image_channels="first",
+                                           step=(i+1)*(self.epoch+1))
             data['epoch'] = self.epoch
             data['settings'] = self.settings
             # forward pass
             loss, stats = self.actor(data)
+            for s in stats.keys():
+                self._experiment.log_metric("{}_{}".format(type_,s),
+                                            stats[s],
+                                            step=(i+1)*(self.epoch+1),
+                                            epoch=self.epoch)
 
             # backward pass and update weights
             if loader.training:
