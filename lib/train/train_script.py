@@ -1,3 +1,4 @@
+from lib.utils.comet_utils import CometLogger
 import os
 # loss function related
 from lib.utils.box_ops import giou_loss
@@ -15,10 +16,14 @@ from lib.models.stark import build_starks, build_starkst
 from lib.train.actors import STARKSActor, STARKSTActor
 # for import modules
 import importlib
+from pandas.io.json._normalize import nested_to_record
 
 
 def run(settings):
     settings.description = 'Training script for STARK-S, STARK-ST stage1, and STARK-ST stage2'
+
+    # Comet Logger
+    comet_logger = CometLogger(settings.comet, auto_metric_logging=False)
 
     # update the default configs with config file
     if not os.path.exists(settings.cfg_file):
@@ -76,10 +81,15 @@ def run(settings):
     if cfg.TRAIN.DEEP_SUPERVISION:
         raise ValueError("Deep supervision is not supported now.")
 
+    settings_dict = nested_to_record(vars(settings), sep='_')
+    comet_logger.log_others(settings_dict)
+    comet_logger.log_asset(settings_dict['cfg_file'], 'cfg.yaml')
+    comet_logger.log_code("./lib/train/trainers/ltr_trainer.py")
+
     # Optimizer, parameters, and learning rates
     optimizer, lr_scheduler = get_optimizer_scheduler(net, cfg)
 
-    trainer = LTRTrainer(actor, [loader_train, loader_val], optimizer, settings, lr_scheduler)
+    trainer = LTRTrainer(actor, [loader_train, loader_val], optimizer, settings, lr_scheduler, comet_logger)
 
     # train process
     if settings.script_name == "stark_st2":
